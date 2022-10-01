@@ -1,26 +1,23 @@
 name: 'Deploy to EKS'
-
-on:
-  workflow_call:
-    inputs:
-      CLUSTER_NAME:
-        required: true
-        type: string
-      RELEASE_TAG:
-        required: false
-        type: string
-      REGION:
-        required: true
-        type: string
-      ENVIRONMENT:
-        required: true
-        type: string
-      AWS_ACCESS_KEY_ID:
-        required: true
-      AWS_SECRET_ACCESS_KEY:
-        required: true
-      SLACK_BOT_TOKEN:
-        required: true
+inputs:
+    CLUSTER_NAME:
+      required: true
+      type: string
+    RELEASE_TAG:
+      required: false
+      type: string
+    REGION:
+      required: true
+      type: string
+    ENVIRONMENT:
+      required: true
+      type: string
+    AWS_ACCESS_KEY_ID:
+      required: true
+    AWS_SECRET_ACCESS_KEY:
+      required: true
+    SLACK_BOT_TOKEN:
+      required: true
 
 jobs:
 
