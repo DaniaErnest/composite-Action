@@ -1,23 +1,98 @@
-name: 'Hello World'
-description: 'Greet someone'
-inputs:
-  who-to-greet:  # id of input
-    description: 'Who to greet'
-    required: true
-    default: 'World'
-outputs:
-  random-number:
-    description: "Random number"
-    value: ${{ steps.random-number-generator.outputs.random-number }}
-runs:
-  using: "composite"
-  steps:
-    - run: echo Hello ${{ inputs.who-to-greet }}.
-      shell: bash
-    - id: random-number-generator
-      run: echo "::set-output name=random-number::$(echo $RANDOM)"
-      shell: bash
-    - run: echo "${{ github.action_path }}" >> $GITHUB_PATH
-      shell: bash          
-    - run: goodbye.sh
-      shell: bash
+name: 'Deploy to EKS'
+
+on:
+  workflow_call:
+    inputs:
+      CLUSTER_NAME:
+        required: true
+        type: string
+      RELEASE_TAG:
+        required: false
+        type: string
+      REGION:
+        required: true
+        type: string
+      ENVIRONMENT:
+        required: true
+        type: string
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      SLACK_BOT_TOKEN:
+        required: true
+
+jobs:
+
+  deploy-k8s:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: prepor/action-aws-iam-authenticator@master
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.REGION }}
+
+      - name: Install and configure kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+          echo "$(<kubectl.sha256) kubectl" | sha256sum --check
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client
+          aws-iam-authenticator token -i ${{ inputs.CLUSTER_NAME }}
+
+      - name: Install kustomize
+        run: |
+            # Setup kustomize
+            cd $( mktemp -d )
+            curl -sfLo kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv4.5.7/kustomize_v4.5.7_linux_amd64.tar.gz
+            chmod u+x ./kustomize
+
+      - name: Connect to EKS cluster
+        run: |
+          aws eks --region ${{ inputs.REGION }} update-kubeconfig --name ${{ inputs.CLUSTER_NAME }}
+
+      - name: Deploy application to EKS cluster
+        env:
+          KOJI_ENVIRONMENT: ${{ inputs.ENVIRONMENT }}
+          RELEASE_TAG: ${{ inputs.RELEASE_TAG }}
+        run: |
+          make apply-container-kustomize
+
+      - name: Get job status
+        run: |
+          status=":x:"
+          if [[ ${{ job.status }} == "success" ]]; then
+            echo "status=:white_check_mark:" >> $GITHUB_ENV
+          else
+            status=":x:"
+            echo "status=:x:" >> $GITHUB_ENV
+          fi
+
+      - name: Post to a Slack channel
+        id: slack
+        uses: slackapi/slack-github-action@v1.22.0
+        with:
+          channel-id: 'C042U1F7V4H'
+          payload: |
+            {
+              "text": "${{ github.repository }} GitHub Action build result",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "GitHub Action build result: ${{ env.status }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
