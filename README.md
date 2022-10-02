@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     
-    - uses: DaniaErnest/composite-Action@v1
+    - uses: DaniaErnest/composite-Action@v3
       CLUSTER_NAME: Eks_cluster
            RELEASE_TAG: v2
            REGION:  us-east-2
